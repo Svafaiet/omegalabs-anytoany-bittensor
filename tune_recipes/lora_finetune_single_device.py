@@ -205,12 +205,6 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         self._tokenizer = config.instantiate(cfg.tokenizer)
         log.info("Tokenizer is initialized from file.")
 
-        self._optimizer = self._setup_optimizer(
-            cfg_optimizer=cfg.optimizer,
-            opt_state_dict=(
-                checkpoint_dict[utils.OPT_KEY] if self._resume_from_checkpoint else None
-            ),
-        )
 
         self._loss_fn = config.instantiate(cfg.loss)
         log.info("Loss is initialized.")
@@ -242,11 +236,43 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
 
         # Learning rate scheduler can only be set up after number of steps
         # has been computed
+
+        # self._optimizer = self._setup_optimizer(
+        #     cfg_optimizer=cfg.optimizer,
+        #     opt_state_dict=None,
+        # )
+        # self._lr_scheduler = self._setup_lr_scheduler(
+        #     cfg_lr_scheduler=cfg.lr_scheduler,
+        #     num_training_steps=self.total_epochs * self._steps_per_epoch,
+        #     last_epoch=-1,
+        # )
+
+        # # lrs = {}
+        # # for i, g in enumerate(self._optimizer.param_groups):
+        #     # lrs[i] = g['lr']
+        #     # g['lr'] = 2.9e-05
+        # chch = 0
+        # for i in range(self.epochs_run):
+        #     for j in range(self.max_steps_per_epoch):
+        #         self._lr_scheduler.step()
+        #         chch += 1
+        # print("Correctly fixing scheduler", chch)
+
+        # scheduler_state = self._lr_scheduler.state_dict()
+
+
+        self._optimizer = self._setup_optimizer(
+            cfg_optimizer=cfg.optimizer,
+            opt_state_dict=(
+                checkpoint_dict[utils.OPT_KEY] if self._resume_from_checkpoint else None
+            ),
+        )
         self._lr_scheduler = self._setup_lr_scheduler(
             cfg_lr_scheduler=cfg.lr_scheduler,
             num_training_steps=self.total_epochs * self._steps_per_epoch,
             last_epoch=self.total_training_steps - 1,
         )
+        # self._lr_scheduler.load_state_dict(scheduler_state)
 
         self._profiler_enabled = cfg.profiler.enabled
         self._profiler = config.instantiate(cfg.profiler)
@@ -329,6 +355,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         cfg_lr_scheduler: DictConfig,
         num_training_steps: int,
         last_epoch: int,
+        optimizer=None,
     ) -> Optimizer:
         lr_scheduler = config.instantiate(
             cfg_lr_scheduler,
@@ -431,6 +458,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
 
         # zero out the gradients before starting training
         self._optimizer.zero_grad()
+    
 
         # self.epochs_run should be non-zero when we're resuming from a checkpoint
         for curr_epoch in range(self.epochs_run, self.total_epochs):

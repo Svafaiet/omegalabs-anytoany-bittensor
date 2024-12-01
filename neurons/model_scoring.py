@@ -45,29 +45,31 @@ def pull_latest_omega_dataset() -> Optional[Dataset]:
     return omega_dataset
 
 
-def load_ckpt_from_hf(hf_repo_id: str, local_dir: str, target_file: str = "hotkey.txt") -> InferenceRecipe:
-    repo_dir = Path(local_dir) / hf_repo_id
-    bt.logging.info(f"Loading ckpt {hf_repo_id}, repo_dir: {repo_dir}")
+def load_ckpt_from_hf(epoch) -> InferenceRecipe:
+    # repo_dir = Path(local_dir) / hf_repo_id
+    # bt.logging.info(f"Loading ckpt {hf_repo_id}, repo_dir: {repo_dir}")
 
-    hf_api = huggingface_hub.HfApi()
+    # hf_api = huggingface_hub.HfApi()
 
-    # Download and read the target file
-    target_file_contents = None
-    try:
-        target_file_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=target_file, local_dir=repo_dir)
-        with open(target_file_path, 'r') as file:
-            target_file_contents = file.read()
-    except huggingface_hub.utils._errors.EntryNotFoundError:
-        print(f"Warning: File '{target_file}' not found in the repository.")
-    except Exception as e:
-        print(f"An error occurred while trying to read '{target_file}': {str(e)}")
+    # # Download and read the target file
+    # target_file_contents = None
+    # try:
+    #     target_file_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=target_file, local_dir=repo_dir)
+    #     with open(target_file_path, 'r') as file:
+    #         target_file_contents = file.read()
+    # except huggingface_hub.utils._errors.EntryNotFoundError:
+    #     print(f"Warning: File '{target_file}' not found in the repository.")
+    # except Exception as e:
+    #     print(f"An error occurred while trying to read '{target_file}': {str(e)}")
 
-    ckpt_files = [f for f in hf_api.list_repo_files(repo_id=hf_repo_id) if f.startswith(MODEL_FILE_PREFIX)]
-    if len(ckpt_files) == 0:
-        raise ValueError(f"No checkpoint files found in {hf_repo_id}")
+    # ckpt_files = [f for f in hf_api.list_repo_files(repo_id=hf_repo_id) if f.startswith(MODEL_FILE_PREFIX)]
+    # if len(ckpt_files) == 0:
+    #     raise ValueError(f"No checkpoint files found in {hf_repo_id}")
 
-    config_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=CONFIG_FILE, local_dir=repo_dir)
-    ckpt_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=ckpt_files[0], local_dir=repo_dir)
+    # config_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=CONFIG_FILE, local_dir=repo_dir)
+    config_path = "/root/omega/config/8B_lora.yaml"
+    # ckpt_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=ckpt_files[0], local_dir=repo_dir)
+    ckpt_path = f"meta_model_{epoch}.yaml"
     train_cfg = OmegaConf.load(config_path)
     train_cfg.model = DictConfig({
         "_component_": "models.mmllama3_8b",
@@ -81,7 +83,7 @@ def load_ckpt_from_hf(hf_repo_id: str, local_dir: str, target_file: str = "hotke
     train_cfg.tokenizer.path = "./models/tokenizer.model"
     inference_recipe = InferenceRecipe(train_cfg)
     inference_recipe.setup(cfg=train_cfg)
-    return inference_recipe, train_cfg, target_file_contents
+    return inference_recipe, train_cfg, None
 
 
 def get_gpu_memory():
@@ -102,36 +104,37 @@ def cleanup_gpu_memory():
     torch.cuda.ipc_collect()
 
 
-def get_model_score(hf_repo_id, mini_batch, local_dir, hotkey, block, model_tracker):
+def get_model_score(mini_batch):
     cleanup_gpu_memory()
     log_gpu_memory('before model load')
-    inference_recipe, config, hotkey_file_contents = load_ckpt_from_hf(hf_repo_id, local_dir)
+    epoch = 1
+    inference_recipe, config, hotkey_file_contents = load_ckpt_from_hf(epoch=epoch)
 
     # Check if the contents of license file are the same as the hotkey if in repo
-    if hotkey_file_contents is not None and hotkey_file_contents != hotkey:
-        bt.logging.warning(f"*** Hotkey file contents {hotkey_file_contents[:48]} do not match hotkey {hotkey}. Returning score of 0. ***")
-        cleanup_gpu_memory()
-        log_gpu_memory('after model clean-up')
-        return 0
-    elif hotkey_file_contents is not None and hotkey_file_contents == hotkey:
-        bt.logging.info(f"Hotkey file contents match hotkey {hotkey}")
+    # if hotkey_file_contents is not None and hotkey_file_contents != hotkey:
+    #     bt.logging.warning(f"*** Hotkey file contents {hotkey_file_contents[:48]} do not match hotkey {hotkey}. Returning score of 0. ***")
+    #     cleanup_gpu_memory()
+    #     log_gpu_memory('after model clean-up')
+    #     return 0
+    # elif hotkey_file_contents is not None and hotkey_file_contents == hotkey:
+    #     bt.logging.info(f"Hotkey file contents match hotkey {hotkey}")
 
     # Check if the model is unique. Calculates the model's checkpoint (.pt) file hash for storage.
-    if model_tracker is not None:
-        is_model_unique, model_hash = model_tracker.is_model_unique(
-            hotkey, 
-            block, 
-            config.checkpointer.checkpoint_dir + "/" + config.checkpointer.checkpoint_files[0]
-        )
-        if is_model_unique:
-            bt.logging.info(f"Model with hash {model_hash} on block {block} is unique.")
-        else:
-            bt.logging.warning(f"*** Model with hash {model_hash} on block {block} is not unique. Returning score of 0. ***")
-            cleanup_gpu_memory()
-            log_gpu_memory('after model clean-up')
-            return 0
+    # if model_tracker is not None:
+    #     is_model_unique, model_hash = model_tracker.is_model_unique(
+    #         hotkey, 
+    #         block, 
+    #         config.checkpointer.checkpoint_dir + "/" + config.checkpointer.checkpoint_files[0]
+    #     )
+    #     if is_model_unique:
+    #         bt.logging.info(f"Model with hash {model_hash} on block {block} is unique.")
+    #     else:
+    #         bt.logging.warning(f"*** Model with hash {model_hash} on block {block} is not unique. Returning score of 0. ***")
+    #         cleanup_gpu_memory()
+    #         log_gpu_memory('after model clean-up')
+    #         return 0
 
-    bt.logging.info(f"Scoring {hf_repo_id}...")
+    bt.logging.info(f"Scoring {epoch}...")
     log_gpu_memory('after model load')
     batch_dim = config.batch_size
     similarities = []
@@ -163,13 +166,12 @@ def get_model_score(hf_repo_id, mini_batch, local_dir, hotkey, block, model_trac
 if __name__ == "__main__":
     from utilities.temp_dir_cache import TempDirCache
     temp_dir_cache = TempDirCache(10)
-    for epoch in range(2):
-        mini_batch = pull_latest_omega_dataset()
-        for hf_repo_id in ["briggers/omega_a2a_test2", "salmanshahid/omega_a2a_test", "briggers/omega_a2a_test",]:
-            local_dir = temp_dir_cache.get_temp_dir(hf_repo_id)
-            local_dir = './model_cache' #temp_dir_cache.get_temp_dir(hf_repo_id)
+    mini_batch = pull_latest_omega_dataset()
+    for hf_repo_id in ["briggers/omega_a2a_test2", "salmanshahid/omega_a2a_test", "briggers/omega_a2a_test",]:
+        local_dir = temp_dir_cache.get_temp_dir(hf_repo_id)
+        local_dir = './model_cache' #temp_dir_cache.get_temp_dir(hf_repo_id)
 
-            hotkey = "hotkey"
-            block = 1
-            model_tracker = None
-            get_model_score(hf_repo_id, mini_batch, local_dir, hotkey, block, model_tracker)
+        hotkey = "hotkey"
+        block = 1
+        model_tracker = None
+        get_model_score(hf_repo_id, mini_batch, local_dir, hotkey, block, model_tracker)
