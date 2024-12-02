@@ -67,9 +67,13 @@ def load_ckpt_from_hf(epoch) -> InferenceRecipe:
     #     raise ValueError(f"No checkpoint files found in {hf_repo_id}")
 
     # config_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=CONFIG_FILE, local_dir=repo_dir)
-    config_path = "/root/omega/config/8B_lora.yaml"
-    # ckpt_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=ckpt_files[0], local_dir=repo_dir)
-    ckpt_path = f"meta_model_{epoch}.yaml"
+    if epoch is not None:
+        config_path = "/root/omega/config/8B_lora.yaml"
+        # ckpt_path = hf_api.hf_hub_download(repo_id=hf_repo_id, filename=ckpt_files[0], local_dir=repo_dir)
+        ckpt_path = f"/root/omega/output_checkpoints/experiment_1/meta_model_{epoch}.pt"
+    else:
+        config_path = "/root/loveami035/training_config.yml"
+        ckpt_path = "/root/loveami035/meta_model_0.pt"
     train_cfg = OmegaConf.load(config_path)
     train_cfg.model = DictConfig({
         "_component_": "models.mmllama3_8b",
@@ -79,6 +83,7 @@ def load_ckpt_from_hf(epoch) -> InferenceRecipe:
     train_cfg.batch_size = 4
     train_cfg.checkpointer.checkpoint_dir = os.path.dirname(ckpt_path)
     train_cfg.checkpointer.checkpoint_files = [os.path.basename(ckpt_path)]
+    print(train_cfg.checkpointer)
     train_cfg.inference.max_new_tokens = 300
     train_cfg.tokenizer.path = "./models/tokenizer.model"
     inference_recipe = InferenceRecipe(train_cfg)
@@ -104,10 +109,9 @@ def cleanup_gpu_memory():
     torch.cuda.ipc_collect()
 
 
-def get_model_score(mini_batch):
+def get_model_score(mini_batch, epoch=1):
     cleanup_gpu_memory()
     log_gpu_memory('before model load')
-    epoch = 1
     inference_recipe, config, hotkey_file_contents = load_ckpt_from_hf(epoch=epoch)
 
     # Check if the contents of license file are the same as the hotkey if in repo
@@ -149,6 +153,11 @@ def get_model_score(mini_batch):
         text_embeddings = inference_recipe._embed_model.embed_text(
             generated_captions + actual_captions
         )
+        if idx == 0:
+            print("Generated")
+            print(generated_captions)
+            print("Actual:")
+            print(actual_captions)
         text_similarity = torch.nn.functional.cosine_similarity(
             text_embeddings[:video_embed.size(0)],
             text_embeddings[video_embed.size(0):],
@@ -157,7 +166,7 @@ def get_model_score(mini_batch):
         similarities.extend(text_similarity.tolist())
 
     mean_similarity = torch.tensor(similarities).mean().item()
-    bt.logging.info(f"Scoring {hf_repo_id} complete: {mean_similarity:0.5f}")
+    bt.logging.info(f"Scoring {epoch} complete: {mean_similarity:0.5f}")
     cleanup_gpu_memory()
     log_gpu_memory('after model clean-up')
     return mean_similarity
@@ -167,11 +176,17 @@ if __name__ == "__main__":
     from utilities.temp_dir_cache import TempDirCache
     temp_dir_cache = TempDirCache(10)
     mini_batch = pull_latest_omega_dataset()
-    for hf_repo_id in ["briggers/omega_a2a_test2", "salmanshahid/omega_a2a_test", "briggers/omega_a2a_test",]:
-        local_dir = temp_dir_cache.get_temp_dir(hf_repo_id)
-        local_dir = './model_cache' #temp_dir_cache.get_temp_dir(hf_repo_id)
+    # for hf_repo_id in ["briggers/omega_a2a_test2", "salmanshahid/omega_a2a_test", "briggers/omega_a2a_test",]:
+    # local_dir = temp_dir_cache.get_temp_dir(hf_repo_id)
+    # local_dir = './model_cache' #temp_dir_cache.get_temp_dir(hf_repo_id)
 
-        hotkey = "hotkey"
-        block = 1
-        model_tracker = None
-        get_model_score(hf_repo_id, mini_batch, local_dir, hotkey, block, model_tracker)
+    # hotkey = "hotkey"
+    # block = 1
+    # model_tracker = None
+    print(get_model_score(mini_batch,epoch=None))
+
+    print(get_model_score(mini_batch,epoch=0))
+    print(get_model_score(mini_batch,epoch=1))
+    print(get_model_score(mini_batch,epoch=2))
+
+    
